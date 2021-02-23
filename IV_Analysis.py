@@ -66,7 +66,7 @@ Var = {'Vsteady': 0,'VHcurrent':0, 'ResistanceSweep':0, 'ResistanceSweep':0, 'Ba
 
 Rslt = {'Filename': 0, 'Resistance Average (MOhm)': 0,'Resistance Sag (MOhm)':0,'Resistance Steady-state (MOhm)':0, 'Baseline Average (mV)': 0, 'Baseline Average before Onset (mV)': 0,
         'Steady state depolarisation (mV)': 0, 'Sag Max Value (mV)': 0,'Sag Amplitude (mV)':0, 'Sag Ratio': 0, 'Sag Peak (mV)': 0,
-        'Sag Full-Width Half maximum (ms)':0}
+        'Sag Full-Width Half maximum (ms)':0,'SagFit_a': 0,'SagFit_b': 0,'SagFit_c': 0,}
 
 # Excel file opening ###################################################################################################
 workbook = xlsxwriter.Workbook(mydirectory + '/Results_IV/' + timestr + '/Results_' + timestr + '.xlsx')
@@ -83,8 +83,8 @@ for key in Rslt.keys():
 for filename in src_files:
     os.makedirs(mydirectory + '/Results_IV/' + timestr + '/' + filename[:-4])
     abf: ABF = pyabf.ABF(filename)
-    #filename = filename[:-10]            # Name your file as you want
 
+    #filename = filename[:-10]            # Name your file as you want
     #print(abf.headerText)
 
     print("Reading", filename + '...', end=""),
@@ -122,8 +122,10 @@ for filename in src_files:
         # Baseline from 0 second to the beginning of the pulse.
         BaselineSweep[sweepNumber] = np.mean(abf.sweepY[:PulseStart])  # Mean/baseline before current pulse
         VBaseline[sweepNumber] = np.mean(abf.sweepY[PulseStart - AverageOffOnSet:PulseStart ])
-        ResistanceSweep[sweepNumber] = np.mean(abf.sweepY[ResistancePulseStart:ResistancePulseEnd]) / np.mean(abf.sweepC[ResistancePulseStart:ResistancePulseEnd])  # Data are real values.
-
+        ResistanceSweep[sweepNumber] = (np.mean(abf.sweepY[ResistancePulseStart:ResistancePulseEnd])
+                                        -np.mean(abf.sweepY[ResistancePulseStart - RPulseInterval:ResistancePulseStart]))\
+                                       /(np.mean(abf.sweepC[ResistancePulseStart:ResistancePulseEnd])*1e-3)  # real values in data var.
+                                                                                                             # deltaV for Resistance
         # If the mean during the pulse frame is bellow the baseline +5 mV, we calculate the sag.
         if np.mean(abf.sweepY[PulseStart:PulseEnd]) <= BaselineSweep[sweepNumber] + 5:
             VHcurrent[sweepNumber] = np.amin(abf.sweepY[PulseStart:PulseStart + SagFrame])  # Take the minimum Voltage for each sweep.
@@ -141,16 +143,12 @@ for filename in src_files:
     print(" Processing data...", end="")
 
     # Basic properties layout ##########################################################################################
-    #print('wtf1', np.mean(ResistanceSweep))
-    #print('wtf2',math.isnan(float(np.mean(ResistanceSweep))))
 
-    if math.isnan(float(np.mean(ResistanceSweep))) == True or '-inf':
-        warnings.warn(filename + "doesn't have -5pA input. Resistance is set to 0 ")
+    if math.isnan(float(np.mean(ResistanceSweep))) or math.isinf(np.mean(ResistanceSweep)) == True:
+        warnings.warn(filename + " doesn't have -5pA input. Resistance is set to 0 ")
         ResistanceAverage = 0
     else:
         ResistanceAverage = np.mean(ResistanceSweep)
-
-    #print('nan?',ResistanceAverage)
 
     BaselineAverage = np.mean(BaselineSweep)
     SagPeak = BaselineSweep[0] - VHcurrent[0]                # From baseline. Not 'correct' name. Rename if you want.
@@ -166,7 +164,7 @@ for filename in src_files:
         InstantaneousFrequency[index + fthreshold] = [1 / (item[j + 1] - item[j]) * abf.dataRate for j in np.arange(0, len(item) - 1)]
 
         # Fitting Instantaneous frequency process
-        p0 = [-65, 0.1, 100] # The function need some help on the parameters. input your first guess here.
+        p0 = [-100, 1, 100] # The function need some help on the parameters. input your first guess here.
         popt, pcov = optimize.curve_fit(fitting, range(0, len(PeaksSweep[index + fthreshold]) - 1),
                                         InstantaneousFrequency[index + fthreshold], p0, maxfev=5000)
         # print("a =", popt[0], "+/-", pcov[0, 0] ** 0.5)
@@ -199,14 +197,21 @@ for filename in src_files:
     # Plotting the first sag trace, baseline, sag amplitude, ratio and Vsteady versus Vsag #############################
     abf.setSweep(abf.sweepList[0])  # We want to plot the first trace only
 
-    '''
+
     # I-V Plot #########################################################################################################
     fig = plt.figure()
     ax = fig.add_subplot(111)
-    plt.plot(np.trim_zeros(Vsteady), CurrentIn[:len(np.trim_zeros(Vsteady))], linewidth=1.7,
-             linestyle='--', marker='o', color='k', label='Steady state')
-    plt.plot(np.trim_zeros(VHcurrent), CurrentIn[:len(np.trim_zeros(VHcurrent))], linewidth=1.7,
-             linestyle='--', marker='s', color='r', label='Peak')
+
+    plt.scatter(CurrentIn[:len(np.trim_zeros(Vsteady))],np.trim_zeros(Vsteady),
+                label='Steady state', facecolors='white', edgecolors='k')
+    plt.plot(CurrentIn[:len(np.trim_zeros(Vsteady))],scipy.signal.savgol_filter(np.trim_zeros(Vsteady), 5, 2),
+             linewidth=1.5, linestyle='--', color='k', label='Steady state fitted')#, marker='o')
+
+    plt.scatter(CurrentIn[:len(np.trim_zeros(VHcurrent))], np.trim_zeros(VHcurrent),
+                label='Peak', facecolors='white', edgecolors='b')
+    plt.plot(CurrentIn[:len(np.trim_zeros(VHcurrent))], scipy.signal.savgol_filter(np.trim_zeros(VHcurrent), 5, 2),
+             linewidth=1.5, linestyle='--', color='k', label='Peak fitted')
+
     for axis in ['bottom', 'left']:
         ax.spines[axis].set_linewidth(2)
     ax.spines['right'].set_color('none')  # Eliminate upper and right axes
@@ -215,20 +220,26 @@ for filename in src_files:
     # ax.spines['bottom'].set_position('center')   # Nice but not very efficient with ABF1. Lets see later with ABF2
     # ax.xaxis.set_ticks_position('bottom')        # Show ticks in the left and lower axes only. Go with the code above.
     # ax.yaxis.set_ticks_position('left')
-    plt.axhline(y=0, linewidth=1, color='k', linestyle='dotted')
+    #plt.axhline(y=0, linewidth=1, color='k', linestyle='dotted')
     plt.title("Current-Potential relationship")
-    plt.xlabel('Potential (mV)', fontweight='bold')
-    plt.ylabel('Current Injected (pA)', fontweight='bold')
+    plt.ylabel('Potential (mV)', fontweight='bold')
+    plt.xlabel('Current Injected (pA)', fontweight='bold')
     plt.legend()
     fig.savefig(mydirectory + '/Results_IV/' + timestr + '/' + filename[:-4] + '/' + 'Current-Potential_relationship.png', dpi=400)
     #plt.show()
 
     # Plotting the frequency of sweeps #################################################################################
+
     fig = plt.figure()
     ax = fig.add_subplot(111)
     for axis in ['bottom', 'left']:
         ax.spines[axis].set_linewidth(2)
-    plt.plot(CurrentIn, Frequency, linewidth=1.7, linestyle='--', marker='o', color='k')
+
+    plt.scatter(CurrentIn,Frequency,
+                label='Steady state', facecolors='w', edgecolors='k')
+    plt.plot(CurrentIn, scipy.signal.savgol_filter(Frequency, 5, 3), linewidth=1.5,
+             linestyle='--', color='k')#, marker='o')
+
     ax.spines['right'].set_color('none')  # Eliminate upper and right axes
     ax.spines['top'].set_color('none')
     plt.xlim(left=-50)  # adjust the left leaving right unchanged
@@ -237,7 +248,7 @@ for filename in src_files:
     plt.ylabel('Average Firing Frequency (Hz)', fontweight='bold')
     fig.savefig(mydirectory + '/Results_IV/' + timestr + '/' + filename[:-4] + '/' + 'Frequency.png', dpi=400)
     #plt.show()
-    '''
+
 
     #FWHM######################################################################################
     y = abf.sweepY[PulseStart:PulseEnd]
@@ -262,8 +273,8 @@ for filename in src_files:
 
     SagPotential = np.mean(y[int(peaksPC)-100:int(peaksPC)+100])
     InputCurrent = np.mean(c[int(peaksPC)-100:int(peaksPC)+100])
-    SagResistance = (SagPotential*1e-3)/(InputCurrent*1e-12)*1e-6
-    SteadyResistance = Vsteady[0]/(np.mean(abf.sweepC[PulseEnd - AverageOffOnSet:PulseEnd])*1e-3)
+    SagResistance = (VBaseline[0]-(SagPotential))/-(InputCurrent*1e-3)
+    SteadyResistance = (VBaseline[0]-Vsteady[0])/-(np.mean(abf.sweepC[PulseEnd - AverageOffOnSet:PulseEnd])*1e-3)
 
     #Plot sag with ratio########################
 
@@ -303,7 +314,7 @@ for filename in src_files:
 
 
     # Sag magnification and exponential fitting ########################################################################
-    '''
+
     IndexSag = np.amin(np.where(abf.sweepY == VHcurrent[0]))
 
     x1 = abf.sweepX[int(IndexSag):int(2.5 * abf.dataRate)]
@@ -311,13 +322,13 @@ for filename in src_files:
 
     fig = plt.figure()
     ax = fig.add_subplot(111)
-    plt.plot(x1, y1, 'k', label='Data')
+    plt.plot(x1, y1, 'grey', label='Data')
 
-    p1 = [1000, 1, 10]  # Change if you think the dynamic is different.
-    popta, pcova = optimize.curve_fit(fitting, x1, y1, p1, maxfev=5000)  # Big number of iteration.
-    # print("a2 =", popta[0], "+/-", pcova[0, 0] ** 0.5)
-    # print("b2 =", popta[1], "+/-", pcova[1, 1] ** 0.5)
-    # print("c2 =", popta[2], "+/-", pcova[2, 2] ** 0.5)
+    p1 = [10000, 5, -50]  # Change if you think the dynamic is different.
+    popta, pcova = optimize.curve_fit(fitting, x1, y1, p1, maxfev=10000)  # Big number of iteration.
+    #print("a2 =", popta[0], "+/-", pcova[0, 0] ** 0.5)
+    #print("b2 =", popta[1], "+/-", pcova[1, 1] ** 0.5)
+    #print("c2 =", popta[2], "+/-", pcova[2, 2] ** 0.5)
     yEXP1 = fitting(x1, *popta)
 
     plt.plot(x1, yEXP1, 'r-', ls='--', label='a=%5.3f, b=%5.3f, c=%5.3f' % tuple(popt))
@@ -333,24 +344,23 @@ for filename in src_files:
     fig.savefig(mydirectory + '/Results_IV/' + timestr + '/' + filename[:-4] + '/' + 'SagFit.png', dpi=400)
     #plt.show()
 
-    plt.clf()   #delete when finished
-    '''
     
-    # Plotting a figure with the first and last sweep to quickly check the profile.###############################
+    # Plotting a figure with the first and last sweep.###############################
     fig = plt.figure(figsize=(10, 2))
     gs = gridspec.GridSpec(2, 1, height_ratios=[10, 1])
     axs = plt.subplots(2, 1, sharex=True, gridspec_kw={'wspace': 0, 'hspace': 0})# Remove horizontal space between axes
     ax0 = plt.subplot(gs[0])# Plot each graph, and manually set the y tick values
 
     limitmin = np.amin(abf.sweepY)
-    abf.setSweep(abf.sweepList[-2])  # Change sweep.
+
+    abf.setSweep(abf.sweepList[-1])  # Change sweep.
+    limitmax = np.amax(abf.sweepY)
     ax0.plot(abf.sweepX, abf.sweepY, 'grey', linewidth=1)
 
-    abf.setSweep(abf.sweepList[-8])  # Change sweep.
-    limitmax = np.amax(abf.sweepY)
 
+    abf.setSweep(abf.sweepList[12])
     ax0.plot(abf.sweepX, abf.sweepY, 'blue', linewidth=1)
-    #ax0.set_title(filename[:-10])
+
     for spine in plt.gca().spines.values():
         spine.set_visible(False)
     #ax0.annotate(str(round(np.mean(BaselineSweep), 2)) + ' mV', xy=(1.2, np.mean(BaselineSweep)),
@@ -361,7 +371,8 @@ for filename in src_files:
     #plt.plot(Vsteady[0], Vsteady[0], abf.data[1][0], abf.data[1][-1], 'r')
 
     ax1 = plt.subplot(gs[1])
-    ax1.plot(abf.sweepX, abf.data[1][len(abf.sweepX) * 8:len(abf.sweepX) * 9], 'k', linewidth=1)
+    ax1.plot(abf.sweepX, abf.data[1][len(abf.sweepX) * 8:len(abf.sweepX) * 9], 'b', linewidth=1)
+    ax1.plot(abf.sweepX, abf.sweepC,'k')#[len(abf.sweepX) * 8:len(abf.sweepX) * 9], 'b', linewidth=1)
 
     for spine in plt.gca().spines.values():
         spine.set_visible(False)
@@ -369,7 +380,7 @@ for filename in src_files:
     plt.gca().get_yaxis().set_visible(False)  # hide Y axis
     plt.gca().get_xaxis().set_visible(False)  # hide X axis
     plt.axis([1.5, 2.85, np.amin(abf.data[1][len(abf.sweepX) * 8:len(abf.sweepX) * 9]),
-              np.amax(abf.data[1][len(abf.sweepX) * 8:len(abf.sweepX) * 9])])  # plt.axis([xmin,xmax,ymin,ymax])
+              np.amax(abf.sweepC)]) # plt.axis([xmin,xmax,ymin,ymax])
     plt.gcf()
     plt.draw()
     fig.savefig(mydirectory + '/Results_IV/' + timestr + '/' + filename[:-4] + '/' + 'neuron_IV_profile.png', dpi=1000)
@@ -393,6 +404,10 @@ for filename in src_files:
     Rslt['Sag Ratio'] = SagRatio
     Rslt['Sag Peak (mV)'] = SagPeak                    # From baseline. Not 'correct' name. Rename if you want.
     Rslt['Sag Full-Width Half maximum (ms)'] = SagHalfWidth
+    Rslt['SagFit_a'] = popta[0]
+    Rslt['SagFit_b'] = popta[1]
+    Rslt['SagFit_c'] = popta[2]
+
 
     col = 0
     for thing in Rslt.keys():

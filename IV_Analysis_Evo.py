@@ -26,6 +26,9 @@ from pyabf import ABF  # From pyABF we want the module to read ABF files
 from matplotlib import gridspec  # Matlab Layout module
 from scipy.optimize import curve_fit
 from scipy.signal import find_peaks, peak_widths
+import scipy.signal
+import warnings
+import math
 
 # Introduction #########################################################################################################
 
@@ -61,8 +64,9 @@ Var = {'Vsteady': 0,'VHcurrent':0, 'ResistanceSweep':0, 'ResistanceSweep':0, 'Ba
             'VBaseline':0, 'PeaksSweep':0, 'Frequency':0, 'InstantaneousFrequency':0}
 '''
 
-Rslt = {'Filename': 0, 'Resistance Average (MOhm)': 0, 'Baseline Average (mV)': 0, 'Baseline Average before Onset (mV)': 0,
-        'Steady state depolarisation (mV)': 0, 'Sag Value (mV)': 0,'Sag Amplitude (mV)':0, 'Sag Ratio (mV)': 0, 'Sag Peak (mV)': 0}
+Rslt = {'Filename': 0, 'Resistance Average (MOhm)': 0,'Resistance Sag (MOhm)':0,'Resistance Steady-state (MOhm)':0, 'Baseline Average (mV)': 0, 'Baseline Average before Onset (mV)': 0,
+        'Steady state depolarisation (mV)': 0, 'Sag Max Value (mV)': 0,'Sag Amplitude (mV)':0, 'Sag Ratio': 0, 'Sag Peak (mV)': 0,
+        'Sag Full-Width Half maximum (ms)':0}
 
 # Excel file opening ###################################################################################################
 workbook = xlsxwriter.Workbook(mydirectory + '/Results_IV/' + timestr + '/Results_' + timestr + '.xlsx')
@@ -103,9 +107,9 @@ for filename in src_files:
 
     PulseStart = int(1.65*abf.dataRate)                     # Seconds. Depends on the protocol. we'll be in a dict soon. 1.5 before. 1.65 now?!
     PulseEnd = int(2.65*abf.dataRate)
-    ResistancePulseStart = int(4.15*abf.dataRate)
+    ResistancePulseStart = int(4.65*abf.dataRate)
     RPulseInterval = int(0.500*abf.dataRate)
-    ResistancePulseEnd = int(4.65*abf.dataRate)
+    ResistancePulseEnd = int(5.15*abf.dataRate)
     SagFrame = int(0.165*abf.dataRate)
     AverageOffOnSet = int(0.200*abf.dataRate)
     RPulseInterval = int(0.500*abf.dataRate)
@@ -118,7 +122,7 @@ for filename in src_files:
         # Baseline from 0 second to the beginning of the pulse.
         BaselineSweep[sweepNumber] = np.mean(abf.sweepY[:PulseStart])  # Mean/baseline before current pulse
         VBaseline[sweepNumber] = np.mean(abf.sweepY[PulseStart - AverageOffOnSet:PulseStart ])
-        ResistanceSweep[sweepNumber] = np.mean(abf.sweepY[ResistancePulseStart:ResistancePulseEnd]) / -0.5  # need sweepC for real results.
+        ResistanceSweep[sweepNumber] = np.mean(abf.sweepY[ResistancePulseStart:ResistancePulseEnd]) / np.mean(abf.sweepC[ResistancePulseStart:ResistancePulseEnd])  # Data are real values.
 
         # If the mean during the pulse frame is bellow the baseline +5 mV, we calculate the sag.
         if np.mean(abf.sweepY[PulseStart:PulseEnd]) <= BaselineSweep[sweepNumber] + 5:
@@ -131,13 +135,23 @@ for filename in src_files:
 
         # If the mean during the pulse frame is above the baseline, count spikes.
         else:
-            PeaksSweep[sweepNumber], _ = find_peaks(abf.sweepY, height=-5, distance=10)
+            PeaksSweep[sweepNumber], _ = find_peaks(abf.sweepY, height=-5)
             Frequency[sweepNumber] = len(PeaksSweep[sweepNumber])
 
     print(" Processing data...", end="")
 
     # Basic properties layout ##########################################################################################
-    ResistanceAverage = np.mean(ResistanceSweep)
+    #print('wtf1', np.mean(ResistanceSweep))
+    #print('wtf2',math.isnan(float(np.mean(ResistanceSweep))))
+
+    if math.isnan(float(np.mean(ResistanceSweep))) == True or '-inf':
+        warnings.warn(filename + "doesn't have -5pA input. Resistance is set to 0 ")
+        ResistanceAverage = 0
+    else:
+        ResistanceAverage = np.mean(ResistanceSweep)
+
+    #print('nan?',ResistanceAverage)
+
     BaselineAverage = np.mean(BaselineSweep)
     SagPeak = BaselineSweep[0] - VHcurrent[0]                # From baseline. Not 'correct' name. Rename if you want.
     SagRatio = (VHcurrent[0] - Vsteady[0])/(VHcurrent[0] - VBaseline[0])
@@ -182,6 +196,9 @@ for filename in src_files:
         '''
 
     # Plotting processed data ##########################################################################################
+    # Plotting the first sag trace, baseline, sag amplitude, ratio and Vsteady versus Vsag #############################
+    abf.setSweep(abf.sweepList[0])  # We want to plot the first trace only
+
     '''
     # I-V Plot #########################################################################################################
     fig = plt.figure()
@@ -221,41 +238,72 @@ for filename in src_files:
     fig.savefig(mydirectory + '/Results_IV/' + timestr + '/' + filename[:-4] + '/' + 'Frequency.png', dpi=400)
     #plt.show()
     '''
-    # Plotting the first sag trace, baseline, sag amplitude, ratio and Vsteady versus Vsag #############################
-    abf.setSweep(abf.sweepList[0])  # We want to plot the first trace only
-    '''
+
+    #FWHM######################################################################################
+    y = abf.sweepY[PulseStart:PulseEnd]
+    x = abf.sweepX[PulseStart:PulseEnd]
+    c = abf.sweepC[PulseStart:PulseEnd]
+
+    peaksPC, _ = find_peaks(-y, prominence=(5),distance=5000)
+    results_half = peak_widths(-y, peaksPC, rel_height=0.5)
+
+    SagHalfWidth = results_half[0] / 20000 * 10e2
+    #print("half W:", SagHalfWidth,
+    #      "peak:", peaksPC)
+
+    #plt.plot(x*20000, y, 'k', label='Data')
+    #plt.plot(1.65*20000+peaksPC, y[peaksPC], "rx")
+    #plt.hlines(results_half[1]*-1,1.65*20000+results_half[2],1.65*20000+results_half[3], color='red')
+    #plt.xlim([PulseStart,PulseEnd])
+    #plt.plot(x[int(peaksPC)-100:int(peaksPC)+100]*20000,y[int(peaksPC)-100:int(peaksPC)+100])#,color='blue')
+    #plt.show()
+
+    #Resistance (MOhm)#######################################
+
+    SagPotential = np.mean(y[int(peaksPC)-100:int(peaksPC)+100])
+    InputCurrent = np.mean(c[int(peaksPC)-100:int(peaksPC)+100])
+    SagResistance = (SagPotential*1e-3)/(InputCurrent*1e-12)*1e-6
+    SteadyResistance = Vsteady[0]/(np.mean(abf.sweepC[PulseEnd - AverageOffOnSet:PulseEnd])*1e-3)
+
+    #Plot sag with ratio########################
+
     fig = plt.figure()
     ax = fig.add_subplot(111)
     plt.plot(abf.sweepX, abf.sweepY, 'k', linewidth=1)
-    plt.axis([1, 3, np.amin(abf.sweepY) - 2, BaselineSweep[0] + 10])  # plt.axis([xmin,xmax,ymin,ymax])
+    plt.axis([1.25, 3, np.amin(abf.sweepY) - 2, BaselineSweep[0] + 10])  # plt.axis([xmin,xmax,ymin,ymax])
     for axis in ['bottom', 'left']:
         ax.spines[axis].set_linewidth(2)
     plt.gca().spines['right'].set_visible(False)
     plt.gca().spines['top'].set_visible(False)
 
-    plt.annotate(text='', xy=(2.52, Vsteady[0]), xytext=(2.52, VHcurrent[0]), arrowprops=dict(arrowstyle='<->'))
-    plt.annotate(str(round(SagRatio, 2)) + ' Sag Ratio', xy=(2.52, Vsteady[0]),
-                 xytext=(2.55, (Vsteady[0] + VHcurrent[0]) / 2 - 2))  # Sag Ratio
-    plt.annotate(str(round(Vsteady[0] - VHcurrent[0], 2)) + ' mV', xy=(2.52, Vsteady[0]),
-                 xytext=(2.55, (Vsteady[0] + VHcurrent[0]) / 2))  # Vsag - Vsteady
-    plt.annotate(text='', xy=(1.25, VHcurrent[0]), xytext=(1.25, BaselineSweep[0]), arrowprops=dict(arrowstyle='<->'))
-    plt.annotate(str(round(SagPeak, 2)) + ' mV', xy=(1.18, VHcurrent[0]),
-                 xytext=(1.18, (VHcurrent[0] + BaselineSweep[0]) / 2), rotation=90, va='center')  # Sag Amplitude
+    plt.annotate('', xy=(2.65, Vsteady[0]), xytext=(2.65, VHcurrent[0]), arrowprops=dict(arrowstyle='<->'))
+
+    plt.annotate(str(round(SagRatio, 2)) + ' Sag Ratio', xy=(2.65, Vsteady[0]),
+                 xytext=(2.70, Vsteady[0]+(Vsteady[0] - VHcurrent[0]) * - 0.45))  # Sag Ratio
+    plt.annotate(str(round(Vsteady[0] - VHcurrent[0], 2)) + ' mV', xy=(2.70, Vsteady[0]),
+                 xytext=(2.70, VHcurrent[0] + (VHcurrent[0]-Vsteady[0])*-0.25))  # Vsag - Vsteady
+
+    plt.annotate('', xy=(1.50, VHcurrent[0]), xytext=(1.50, BaselineSweep[0]), arrowprops=dict(arrowstyle='<->'))
+    plt.annotate(str(round(SagPeak, 2)) + ' mV', xy=(1.28, VHcurrent[0]),
+                 xytext=(1.45, (VHcurrent[0] + BaselineSweep[0]) / 2), rotation=90, va='center')  # Sag Amplitude
     plt.annotate(str(round(np.mean(BaselineSweep), 2)) + ' mV', xy=(1.25, BaselineSweep[0]),
-                 xytext=(1.25, BaselineSweep[0] + 1), ha='center')  # Baseline
+                 xytext=(1.50, BaselineSweep[0] + 1.25), ha='center')  # Baseline
 
     plt.axhline(y=VHcurrent[0], linewidth=0.7, color='r', linestyle='--')
     plt.axhline(y=Vsteady[0], linewidth=0.7, color='b', linestyle='--')
     plt.axhline(y=BaselineSweep[0], linewidth=0.7, color='k', linestyle='--')
+
+    plt.hlines(results_half[1]*-1,(1.65*20000+results_half[2])/20000,(1.65*20000+results_half[3])/20000, color='red')
+
     plt.title("Sag properties")
     plt.xlabel('Time (s)', fontweight='bold')
     plt.ylabel('Potential (mV)', fontweight='bold')
     fig.savefig(mydirectory + '/Results_IV/' + timestr + '/' + filename[:-4] + '/' + 'Sag_properties.png', dpi=400) # Disable if you don't need to plot. Increases speed.
-    #plt.show()
-    '''
+    plt.show()
+
 
     # Sag magnification and exponential fitting ########################################################################
-
+    '''
     IndexSag = np.amin(np.where(abf.sweepY == VHcurrent[0]))
 
     x1 = abf.sweepX[int(IndexSag):int(2.5 * abf.dataRate)]
@@ -286,9 +334,11 @@ for filename in src_files:
     #plt.show()
 
     plt.clf()   #delete when finished
-    # Plotting a figure with the first and last sweep to quickly check the profile.
+    '''
+    
+    # Plotting a figure with the first and last sweep to quickly check the profile.###############################
     fig = plt.figure(figsize=(10, 2))
-    gs = gridspec.GridSpec(2, 1, height_ratios=[10, 3])
+    gs = gridspec.GridSpec(2, 1, height_ratios=[10, 1])
     axs = plt.subplots(2, 1, sharex=True, gridspec_kw={'wspace': 0, 'hspace': 0})# Remove horizontal space between axes
     ax0 = plt.subplot(gs[0])# Plot each graph, and manually set the y tick values
 
@@ -318,25 +368,31 @@ for filename in src_files:
 
     plt.gca().get_yaxis().set_visible(False)  # hide Y axis
     plt.gca().get_xaxis().set_visible(False)  # hide X axis
-    plt.axis([1.5, 2.85, 0, 300])  # plt.axis([xmin,xmax,ymin,ymax])
+    plt.axis([1.5, 2.85, np.amin(abf.data[1][len(abf.sweepX) * 8:len(abf.sweepX) * 9]),
+              np.amax(abf.data[1][len(abf.sweepX) * 8:len(abf.sweepX) * 9])])  # plt.axis([xmin,xmax,ymin,ymax])
     plt.gcf()
     plt.draw()
-    fig.savefig(mydirectory + '/Results_IV/' + timestr + '/' + filename[:-4] + '/' + 'neuron_IV_profile.png', dpi=400)
+    fig.savefig(mydirectory + '/Results_IV/' + timestr + '/' + filename[:-4] + '/' + 'neuron_IV_profile.png', dpi=1000)
     plt.show()
 
-    print(" Successfully completed.")
 
-# Writting process #####################################################################################################
+    print("Successfully completed.")
+
+
+    # Writting process #####################################################################################################
 
     Rslt['Filename'] = filename
-    Rslt['Resistance Average (MOhm)'] = np.mean(ResistanceSweep)
+    Rslt['Resistance Average (MOhm)'] = ResistanceAverage
+    Rslt['Resistance Sag (MOhm)'] = SagResistance
+    Rslt['Resistance Steady-state (MOhm)'] = SteadyResistance
     Rslt['Baseline Average (mV)'] = np.mean(BaselineAverage)
     Rslt['Baseline Average before Onset (mV)'] = VBaseline[0]
     Rslt['Steady state depolarisation (mV)'] = Vsteady[0]
-    Rslt['Sag Value (mV)'] = VHcurrent[0]
+    Rslt['Sag Max Value (mV)'] = VHcurrent[0]
     Rslt['Sag Amplitude (mV)'] = abs(VHcurrent[0] - Vsteady[0])
-    Rslt['Sag Ratio (mV)'] = SagRatio
+    Rslt['Sag Ratio'] = SagRatio
     Rslt['Sag Peak (mV)'] = SagPeak                    # From baseline. Not 'correct' name. Rename if you want.
+    Rslt['Sag Full-Width Half maximum (ms)'] = SagHalfWidth
 
     col = 0
     for thing in Rslt.keys():

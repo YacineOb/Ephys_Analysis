@@ -11,88 +11,103 @@ plt.rcParams["font.family"] = "Calibri" # Change the font used in plots
 
 # Import and read your data #################################################
 
-depoCch = np.array([1.026504517, 1.334060669, 0.243732452, 1.332427979, 0.642166138, 5.482227325, 1.961933136,
-                    5.896385193])
-depoML204 = np.array([-1.61208725, 0.036701202, 0.899219513, 0.190662384, -1.102390289, 1.386692047, 1.290462494,
-                      4.274814606])
+######################################################################################################################
+#Read data from excel?
+PFcch = 1
+PFML204 = 1
+###################################################################
 
-#depoCch = np.array([9,1.6,2.5,3.3,1.7,12.9,5.8,6.7])
-#depoML204 = np.array([2,0.1,2.1,3.2,0,4.2,0,5.9])
+DataLabel = 'Persistent firing frequency (spikes/sec)'  # Or 'Depolarization (mV)' ; Label of the Y-axis
 
-# Check normality of the distributions ####################################
-k2, p0 = stats.normaltest(depoCch)
-print("p0 = {:g}".format(p0))
+x = PFCch
+xlabel = 'Carbachol'   # Label of the first column
 
-#ShapiroWilk_test
-s, p = stats.shapiro(depoCch)
-print(p)
+y = PFML204
+ylabel = 'ML204'       # Label of the second column
 
-# Do the appropriate statistic test #######################################
-alpha = 0.05
+# Checking the normality of the distributions #################################
+DifferenceData = np.subtract(x, y)
+stats.probplot(DifferenceData, dist="norm", plot=plt)
+plt.title("Normal Q-Q plot")
+plt.savefig(xlabel + '_' + ylabel + '_QQPlot.png', dpi=1000)  # Saved where your code is
+plt.show()
 
-if p < alpha:
-       w, p = wilcoxon(depoCch, depoML204)
-       print(w, p)
+# Testing the normality of the distributions ####################################
+s0, p0 = stats.shapiro(DifferenceData)  # Shapiro-Wilk; Robust but check if a better test is available for your data
+print('Shapiro-Wilk test:', s0, p0)
+
+# Interpret the results and process test the samples #######################################
+alpha = 0.05     # Define your confidence interval for Shapiro-Wilk test
+
+if p0 <= alpha:
+       print('The null hypothesis (H0) has been rejected. Sample does not seem to be drawn from a normal distribution')
+       test = 'Wilcoxon signed-rank test'
+       w, p = wilcoxon(x, y)
+       print('Wilcoxon signed-rank test:', w, p)
 else:
-       t, p1 = stats.ttest_rel(depoCch, depoML204)
-       print(t, "This is p1", p1)
+       print('The null hypothesis (H0) failed to be rejected. Sample seems to be drawn from a normal distribution')
+       test = "Paired Student's t-test"
+       t, p = stats.ttest_rel(x, y)
+       print("Paired Student's t-test:", t, p)
 
 
 # Plot the values and stats ##############################################
 
 w = 0.2    # bar width
-x = [1, 1.3]  # x-coordinates of your bars
 colors = ['k', 'k']    # corresponding colors
-y = [depoCch, depoML204]  # data series
+
+xcoor = [1, 1.3]  # x-coordinates of your bars
+data = [x, y]  # data series
 
 figure(num=None, figsize=(8, 9), dpi=400, facecolor='w', edgecolor='k')
 fig, ax = plt.subplots()
-ax.bar(x,
-       height=[np.mean(yi) for yi in y],
-       yerr=[stats.sem(yi) for yi in y],    # error bars
-       capsize=10, # error bar cap width in points
+ax.bar(xcoor,
+       height=[np.mean(yi) for yi in data],
+       yerr=[(0,0),[stats.sem(yi) for yi in data]],    # error bars
+       error_kw=dict(lw=3, capsize=15, capthick=3),    # error bar details
        width=w,    # bar width
-       tick_label=["Carbachol", "ML204"],
+       tick_label=[xlabel, ylabel],
        color=(0, 0, 0, 0),  # face color transparent
        edgecolor=colors,
        linewidth=4.0,
-       # ecolor=colors,    # error bar colors; setting this raises an error for whatever reason.
        )
+
 ax.spines['right'].set_color('none')  # Eliminate upper and right axes
 ax.spines['top'].set_color('none')
 
 
-     # distribute scatter randomly across whole width of bar
-ax.scatter(np.ones(depoCch.size), depoCch, color='none', edgecolor='grey', s=150, linewidth=2.5)
-ax.scatter(np.full((1, depoML204.size), x[1]), depoML204, color='none', edgecolor='grey', s=150, linewidth=2.5)
+# distribute scatter over the center of the bars
+ax.scatter(np.ones(x.size), x, color='none', edgecolor='grey', s=150, linewidth=2.5)
+ax.scatter(np.full((1, y.size), xcoor[1]), y, color='none', edgecolor='grey', s=150, linewidth=2.5)
 
 
-for element in np.linspace(0, len(y[0])-1, len(y[0])):
-       ax.plot([x[0], x[1]], [depoCch[int(element)], depoML204[int(element)]], 'k', alpha=0.5)
+for element in np.linspace(0, len(data[0])-1, len(data[0])):
+       ax.plot([xcoor[0], xcoor[1]], [x[int(element)], y[int(element)]], 'k', alpha=0.5)
 
 
 ax.axhline(y=0, color='k', linestyle='-', linewidth=2)
 
 if p < 0.001:
-       ax.axhline(np.amax(y)+1, 0.25, 0.75, color='k', linestyle='-', linewidth=2)
-       ax.text((x[0]+x[1])/2, np.amax(y)+1.2, '***', fontsize=40, horizontalalignment='center')
+       ax.axhline(np.amax(data)+1, 0.25, 0.75, color='k', linestyle='-', linewidth=2)
+       ax.text((xcoor[0]+xcoor[1])/2, np.amax(data)+1.2, '***', fontsize=40, horizontalalignment='center')
        sig = str('***')
 elif p < 0.01:
-       ax.axhline(np.amax(y)+1, 0.25, 0.75, color='k', linestyle='-', linewidth=2)
-       ax.text((x[0]+x[1])/2, np.amax(y)+1.2, '**', fontsize=40, horizontalalignment='center')
+       ax.axhline(np.amax(data)+1, 0.25, 0.75, color='k', linestyle='-', linewidth=2)
+       ax.text((xcoor[0]+xcoor[1])/2, np.amax(data)+1.2, '**', fontsize=40, horizontalalignment='center')
        sig = str('**')
 elif p < 0.05:
-       ax.axhline(np.amax(y)+1, 0.25, 0.75, color='k', linestyle='-', linewidth=2)
-       ax.text((x[0]+x[1])/2, np.amax(y)+1.2, '*', fontsize=40, horizontalalignment='center')
+       ax.axhline(np.amax(data)+1, 0.25, 0.75, color='k', linestyle='-', linewidth=2)
+       ax.text((xcoor[0]+xcoor[1])/2, np.amax(data)+1.2, '*', fontsize=40, horizontalalignment='center')
        sig = str('*')
 else:
-       ax.axhline(np.amax(y) + 1, 0.25, 0.75, color='k', linestyle='-', linewidth=2)
-       ax.text((x[0] + x[1]) / 2-0, np.amax(y) + 1.2, 'n.s.', fontsize=40, horizontalalignment='center')
+       ax.axhline(np.amax(data) + 1, 0.25, 0.75, color='k', linestyle='-', linewidth=2)
+       ax.text((xcoor[0] + xcoor[1]) / 2-0, np.amax(data) + 1.2, 'n.s.', fontsize=40, horizontalalignment='center')
        sig = str('n.s.')
 
 
-plt.ylabel('Depolarization (mV)', fontsize=30, fontweight='bold')
-plt.xlabel('Wilcoxon test, ' + sig + '. p=' + str(p) + ', n=' + str(len(y[0])), fontsize=17)
+plt.ylabel(DataLabel, fontsize=30, fontweight='bold')
+plt.xlabel(test + ', ' + sig + '. p = %.3f' % p + ', $\it{n}$=' + str(len(data[0])), fontsize=17)
+#plt.xlabel("Paired Student's t-test", ' + sig + '. p= %.3f' % p + ', n=' + str(len(y[0])), fontsize=17)
 ax.xaxis.set_tick_params(labelsize=25)
 ax.xaxis.labelpad = 20
 ax.yaxis.set_tick_params(labelsize=25)
@@ -105,6 +120,5 @@ ax.xaxis.set_tick_params(width=3)
 ax.yaxis.set_tick_params(width=3)
 
 fig.set_size_inches(7, 10)
-# fig.savefig('test2png.png', dpi=400)
-
+fig.savefig(xlabel + '_' + ylabel + '_test_Barplot.png', dpi=1000)  # Saved where your code is
 plt.show()

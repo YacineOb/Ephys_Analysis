@@ -35,7 +35,7 @@ ylabel = 'ML204'  # Label of the second column
 DifferenceData = np.subtract(x, y)
 stats.probplot(DifferenceData, dist="norm", plot=plt)
 plt.title("Normal Q-Q plot")
-plt.savefig(xlabel + '_' + ylabel + '_QQPlot.png', dpi=1000)  # Saved where your code is
+plt.savefig(xlabel + '_' + ylabel + '_QQPlot.png', dpi=400)  # Saved where your code is
 plt.show()
 
 # Testing the normality of the distributions #############################

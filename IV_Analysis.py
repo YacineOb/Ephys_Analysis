@@ -114,6 +114,7 @@ for filename in src_files:
     AverageOffOnSet = int(0.200*abf.dataRate)
     RPulseInterval = int(0.500*abf.dataRate)
 
+
     # Algorithm core - Main iteration ##################################################################################
 
     for sweepNumber in abf.sweepList:

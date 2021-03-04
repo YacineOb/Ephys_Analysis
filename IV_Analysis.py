@@ -105,8 +105,6 @@ for filename in src_files:
 
     # ABF-dependant Variables definitions ##############################################################################
 
-
-
     CurrentIn = np.linspace(-300, 300, len(abf.sweepList))  # ! I create the current input data. Use SweepC for ABF2.0.
                                                             # No SweepC with WinWCP converted ABF
 

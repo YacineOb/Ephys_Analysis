@@ -347,7 +347,7 @@ for filename in src_files:
 
     
     # Plotting a figure with the first and last sweep.###############################
-    fig = plt.figure(figsize=(10, 2))
+    #fig = plt.figure(figsize=(10, 2))
     gs = gridspec.GridSpec(2, 1, height_ratios=[10, 1])
     axs = plt.subplots(2, 1, sharex=True, gridspec_kw={'wspace': 0, 'hspace': 0})# Remove horizontal space between axes
     ax0 = plt.subplot(gs[0])# Plot each graph, and manually set the y tick values
@@ -384,7 +384,7 @@ for filename in src_files:
               np.amax(abf.sweepC)]) # plt.axis([xmin,xmax,ymin,ymax])
     plt.gcf()
     plt.draw()
-    fig.savefig(mydirectory + '/Results_IV/' + timestr + '/' + filename[:-4] + '/' + 'neuron_IV_profile.png', dpi=1000)
+    plt.savefig(mydirectory + '/Results_IV/' + timestr + '/' + filename[:-4] + '/' + 'neuron_IV_profile.png', dpi=1000)
     plt.show()
 
 

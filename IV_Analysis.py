@@ -104,10 +104,11 @@ for filename in src_files:
     print("Reading", filename + '...', end=""),
 
     # ABF-dependant Variables definitions ##############################################################################
-
+    '''
     CurrentIn = np.linspace(-300, 300, len(abf.sweepList))  # ! I create the current input data. Use SweepC for ABF2.0.
-                                                            # No SweepC with WinWCP converted ABF
-
+                                                            # No SweepC with WinWCP converted AB
+    '''
+    CurrentIn = np.zeros(len(abf.sweepList))
     Vsteady =  np.zeros(len(abf.sweepList))
     VHcurrent = ResistanceSweep = np.zeros(len(abf.sweepList))
     ResistanceSweep = np.zeros(len(abf.sweepList))
@@ -132,6 +133,8 @@ for filename in src_files:
                                         -np.mean(abf.sweepY[Cst['ResistancePulseStart'] - Cst['RPulseInterval']:Cst['ResistancePulseStart']]))\
                                        /(np.mean(abf.sweepC[Cst['ResistancePulseStart']:Cst['ResistancePulseEnd']])*1e-3)  # real values in data var.
                                                                                                              # deltaV for Resistance
+        CurrentIn[sweepNumber] = np.mean(abf.sweepC[Cst['PulseStart']:Cst['PulseEnd']])
+
         # If the mean during the pulse frame is bellow the baseline +5 mV, we calculate the sag.
         if np.mean(abf.sweepY[Cst['PulseStart']:Cst['PulseEnd']]) <= BaselineSweep[sweepNumber] + 5:
             VHcurrent[sweepNumber] = np.amin(abf.sweepY[Cst['PulseStart']:Cst['PulseStart'] + Cst['SagFrame']])  # Take the minimum Voltage for each sweep.
@@ -211,30 +214,31 @@ for filename in src_files:
 
     plt.scatter(CurrentIn[:len(np.trim_zeros(Vsteady))],np.trim_zeros(Vsteady),
                 label='Steady state', facecolors='white', edgecolors='k')
-    # plt.plot(CurrentIn[:len(np.trim_zeros(Vsteady))],scipy.signal.savgol_filter(np.trim_zeros(Vsteady), 5, 2),
-    #          linewidth=1.5, linestyle='--', color='k', label='Steady state fitted')#, marker='o')
+    plt.plot(np.polyfit(CurrentIn[:len(np.trim_zeros(Vsteady))],np.trim_zeros(Vsteady),1))
+              #linewidth=1.5, linestyle='--', color='k', label='Steady state fitted')#, marker='o')
 
     plt.scatter(CurrentIn[:len(np.trim_zeros(VHcurrent))], np.trim_zeros(VHcurrent),
                 label='Peak', facecolors='white', edgecolors='b')
-    # plt.plot(CurrentIn[:len(np.trim_zeros(VHcurrent))], scipy.signal.savgol_filter(np.trim_zeros(VHcurrent), 5, 2),
-    #          linewidth=1.5, linestyle='--', color='k', label='Peak fitted')
+    plt.plot(CurrentIn[:len(np.trim_zeros(VHcurrent))], scipy.signal.savgol_filter(np.trim_zeros(VHcurrent), 5, 2),
+              linewidth=1.5, linestyle='--', color='k', label='Peak fitted')
 
     for axis in ['bottom', 'left']:
         ax.spines[axis].set_linewidth(2)
     ax.spines['right'].set_color('none')  # Eliminate upper and right axes
     ax.spines['top'].set_color('none')
-    # ax.spines['left'].set_position('center')     # Move left y-axis and bottim x-axis to centre, passing through (0,0)
-    # ax.spines['bottom'].set_position('center')   # Nice but not very efficient with ABF1. Lets see later with ABF2
-    # ax.xaxis.set_ticks_position('bottom')        # Show ticks in the left and lower axes only. Go with the code above.
-    # ax.yaxis.set_ticks_position('left')
+    ax.spines['left'].set_position('zero')     # Move left y-axis and bottim x-axis to centre, passing through (0,0)
+    ax.spines['bottom'].set_position('center')   # Nice but not very efficient with ABF1. Lets see later with ABF2
+    ax.xaxis.set_ticks_position('bottom')        # Show ticks in the left and lower axes only. Go with the code above.
+    ax.yaxis.set_ticks_position('left')
     #plt.axhline(y=0, linewidth=1, color='k', linestyle='dotted')
+
     plt.title("Current-Potential relationship")
-    plt.ylabel('Potential (mV)', fontweight='bold')
-    plt.xlabel('Current Injected (pA)', fontweight='bold')
+    plt.ylabel('V\0x209N$\it{m}$_ (mV)', fontweight='bold',loc='bottom')
+    plt.xlabel('I\0x209N$\it{injected}$_ (pA)', fontweight='bold',loc='left')
     plt.legend()
     fig.savefig(mydirectory + '/Results_IV/' + timestr + '/' + filename[:-4] + '/' + 'Current-Potential_relationship.png', dpi=400)
-    #plt.show()
-
+    plt.show()
+    plt.close()
     # Plotting the frequency of sweeps #################################################################################
 
     fig = plt.figure()
@@ -249,20 +253,20 @@ for filename in src_files:
 
     ax.spines['right'].set_color('none')  # Eliminate upper and right axes
     ax.spines['top'].set_color('none')
+
     plt.xlim(left=-50)  # adjust the left leaving right unchanged
+    plt.ylim(bottom=0)  # adjust the left leaving right unchanged
     plt.title("Current-Frequency relationship")
     plt.xlabel('Current Injected (pA)', fontweight='bold')
     plt.ylabel('Average Firing Frequency (Hz)', fontweight='bold')
     fig.savefig(mydirectory + '/Results_IV/' + timestr + '/' + filename[:-4] + '/' + 'Frequency.png', dpi=400)
-    #plt.show()
-
+    plt.show()
+    plt.close()
 
     #FWHM######################################################################################
     y = abf.sweepY[Cst['PulseStart']:Cst['PulseEnd']]
     x = abf.sweepX[Cst['PulseStart']:Cst['PulseEnd']]
     c = abf.sweepC[Cst['PulseStart']:Cst['PulseEnd']]
-
-    print('zhqts', Cst['PulseStart'], Cst['PulseEnd'])
 
     peaksPC, _ = find_peaks(-y, prominence=(5),distance=5000)
     results_half = peak_widths(-y, peaksPC, rel_height=0.5)
@@ -276,7 +280,7 @@ for filename in src_files:
     #plt.hlines(results_half[1]*-1,1.65*20000+results_half[2],1.65*20000+results_half[3], color='red')
     #plt.xlim([Cst['PulseStart'],Cst['PulseEnd']])
     #plt.plot(x[int(peaksPC)-100:int(peaksPC)+100]*20000,y[int(peaksPC)-100:int(peaksPC)+100])#,color='blue')
-    plt.show()
+    #plt.show()
 
     #Resistance (MOhm)#######################################
 
@@ -319,8 +323,8 @@ for filename in src_files:
     plt.xlabel('Time (s)', fontweight='bold')
     plt.ylabel('Potential (mV)', fontweight='bold')
     fig.savefig(mydirectory + '/Results_IV/' + timestr + '/' + filename[:-4] + '/' + 'Sag_properties.png', dpi=400) # Disable if you don't need to plot. Increases speed.
-    plt.show()
-
+    #plt.show()
+    plt.close()
 
     # Sag magnification and exponential fitting ########################################################################
 
@@ -352,7 +356,7 @@ for filename in src_files:
     plt.legend()
     fig.savefig(mydirectory + '/Results_IV/' + timestr + '/' + filename[:-4] + '/' + 'SagFit.png', dpi=400)
     #plt.show()
-
+    plt.close()
     
     # Plotting a figure with the first and last sweep.###############################
     #fig = plt.figure(figsize=(10, 2))
@@ -390,10 +394,11 @@ for filename in src_files:
     plt.gca().get_xaxis().set_visible(False)  # hide X axis
     plt.axis([1.45, 2.85, np.amin(abf.data[1][len(abf.sweepX) * 8:len(abf.sweepX) * 9]),
               np.amax(abf.sweepC)]) # plt.axis([xmin,xmax,ymin,ymax])
-    plt.gcf()
-    plt.draw()
+    #plt.gcf()
+    #plt.draw()
     plt.savefig(mydirectory + '/Results_IV/' + timestr + '/' + filename[:-4] + '/' + 'neuron_IV_profile.png', dpi=1000)
-    plt.show()
+    #plt.show()
+    plt.close()
 
 
     print("Successfully completed.")
@@ -414,7 +419,7 @@ for filename in src_files:
     Rslt['Sag Peak (mV)'] = SagPeak                    # From baseline. Not 'correct' name. Rename if you want.
     Rslt['Sag Full-Width Half maximum (ms)'] = SagHalfWidth
     Rslt['SagFit_a'] = popta[0]
-    Rslt['SagFit_b'] = popta[1]
+    Rslt['SagFit_b'] = 1/popta[1]*1e3
     Rslt['SagFit_c'] = popta[2]
 
 

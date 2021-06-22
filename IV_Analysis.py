@@ -20,7 +20,7 @@ import matplotlib.pyplot as plt  # MatLab library, for plotting.
 import scipy.optimize as optimize
 from pyabf import ABF  # From pyABF we want the module to read ABF files
 from matplotlib import gridspec  # Matlab Layout module
-from scipy.optimize import curve_fit
+#from scipy.optimize import curve_fit
 from scipy.signal import find_peaks, peak_widths
 import scipy.signal
 import warnings
@@ -69,8 +69,9 @@ else:
 Rslt = {'Filename': 0, 'Resistance Average (MOhm)': 0, 'Resistance Sag (MOhm)': 0, 'Resistance Steady-state (MOhm)': 0,
         'Baseline Average (mV)': 0, 'Baseline Average before Onset (mV)': 0,
         'Steady state depolarisation (mV)': 0, 'Sag Max Value (mV)': 0, 'Sag Amplitude (mV)': 0, 'Sag Ratio': 0,
-        'Sag Peak (mV)': 0,'Sag Full-Width Half maximum (ms)': 0, 'SagFast': 0, 'SagSlow': 0, 'SagMono': 0,
-        'Rebound Depo (mV)':0, 'Rebound FWHM (ms)': 0}
+        'Sag Peak (mV)': 0,'Sag FWHM (ms)': 0, 'Sag TauFast (ms)': 0, 'Sag TauSlow (ms)': 0,
+        'Sag TauMono (ms)': 0, 'Rebound Depo (mV)': 0, 'Rebound FWHM (ms)': 0, 'Adaptation Ratio (flast/f2)':0,
+        'Fast Doublet Index (f1/f2)': 0, 'Delay first Spike (ms)': 0}
 
 ''' Variables in dict.
 Var = {'Vsteady': 0,'VHcurrent':0, 'ResistanceSweep':0, 'ResistanceSweep':0, 'BaselineSweep':0,
@@ -117,11 +118,15 @@ for filename in src_files:
     BaselineSweep = np.zeros(len(abf.sweepList))
     VBaseline = np.zeros(len(abf.sweepList))
     Frequency = np.zeros(len(abf.sweepList))
+    FDI = np.zeros(len(abf.sweepList))
+    DelayFirstSpike = np.zeros(len(abf.sweepList))
+    AdaptationRatio = np.zeros(len(abf.sweepList), dtype=object)
     PeaksSweep = np.zeros(len(abf.sweepList), dtype=object)
     ReboundDepo = np.zeros(len(abf.sweepList), dtype=object)
+    ReboundAmp = np.zeros(len(abf.sweepList), dtype=object)
     ReboundDepo_half = np.zeros(len(abf.sweepList), dtype=object)
     InstantaneousFrequency = np.zeros(len(abf.sweepList), dtype=object)
-    AdaptationRatio = np.zeros(len(abf.sweepList), dtype=object)
+
 
     ####################################################################################################################
     # Algorithm core - Main iteration ##################################################################################
@@ -150,10 +155,12 @@ for filename in src_files:
 
             ReboundDepo[sweepNumber], _ = find_peaks(abf.sweepY,prominence=2,width = 500,distance=100000)
             ReboundDepo_half[sweepNumber] = peak_widths(abf.sweepY, ReboundDepo[sweepNumber], rel_height=0.5)
+            ReboundAmp[sweepNumber] = abs(BaselineSweep[sweepNumber]) - abs(abf.sweepY[int(ReboundDepo[sweepNumber][0])])
 
-            plt.plot(abf.sweepX, abf.sweepY)
-            plt.plot(abf.sweepX[ReboundDepo[sweepNumber][0]],abf.sweepY[ReboundDepo[sweepNumber][0]],'xr')
-            plt.show()
+            # Check you result on a plot ########################################
+            #plt.plot(abf.sweepX, abf.sweepY)
+            #plt.plot(abf.sweepX[ReboundDepo[sweepNumber][0]],abf.sweepY[ReboundDepo[sweepNumber][0]],'xr')
+            #plt.show()
 
 
         # If the mean during the pulse frame is equal to the baseline, there is probably no sag and no spikes.
@@ -182,14 +189,22 @@ for filename in src_files:
     SagRatio = (VHcurrent[0] - Vsteady[0]) / (VHcurrent[0] - VBaseline[0])
 
 
-    ISIthreshold = list(map(lambda i: i >= 8, Frequency)).index(True)  # Take all sweeps ∋ nSpike > 8. For ISI adapt.
+    ISIthreshold = list(map(lambda i: i >= 8, Frequency)).index(True)  # Take all sweeps ∋ nSpike > 8.
     for index, item in enumerate(PeaksSweep[ISIthreshold:]):
-        AdaptationRatio[index + ISIthreshold] = [(item[-1] - item[-2]) / (item[1] - item[0])]
+        AdaptationRatio[index + ISIthreshold] = (item[-1] - item[-2]) / (item[2] - item[1])
+        DelayFirstSpike[index + ISIthreshold] = (item[0] - Cst['PulseStart'])/abf.dataRate * 1e3
 
-    fthreshold = list(map(lambda i: i > 3, Frequency)).index(True)  # Take all sweeps ∋ nSpike > 3. For fitting.
+
+    plt.plot(np.linspace(-300, 300, len(AdaptationRatio)), DelayFirstSpike)
+    plt.show()
+
+    # One loop is not necessary there ?????!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! Get the adaptation ratio later
+    fthreshold = list(map(lambda i: i > 5, Frequency)).index(True)  # Take all sweeps ∋ nSpike > 5.
     for index, item in enumerate(PeaksSweep[fthreshold:]):
         InstantaneousFrequency[index + fthreshold] = [1 / (item[j + 1] - item[j]) * abf.dataRate for j in
                                                       np.arange(0, len(item) - 1)]
+
+
     '''
         # Fitting Instantaneous frequency process
         p0 = [-100, 1, 100, 10, 10]  # The function need some help on the parameters. input your first guess here.
@@ -298,6 +313,8 @@ for filename in src_files:
     results_half = peak_widths(-y, peaksPC, rel_height=0.5)
 
     SagHalfWidth = results_half[0] / 20000 * 10e2   # keep all values?
+
+    # Check if you measured at the appropriate spot #############################################
     # print("half W:", SagHalfWidth,
     #      "peak:", peaksPC)
 
@@ -484,12 +501,17 @@ for filename in src_files:
     Rslt['Sag Amplitude (mV)'] = abs(VHcurrent[0] - Vsteady[0])
     Rslt['Sag Ratio'] = SagRatio
     Rslt['Sag Peak (mV)'] = SagPeak  # From baseline.
-    Rslt['Sag Full-Width Half maximum (ms)'] = SagHalfWidth
-    Rslt['SagFast'] = popt1[1]
-    Rslt['SagSlow'] = popt1[3]
-    Rslt['SagMono'] = popt2[1]
-    Rslt['Rebound Depo (mV)'] = ReboundDepo[0][0]  # From baseline. Not 'correct' name. Rename if you want.
+    Rslt['Sag FWHM (ms)'] = SagHalfWidth
+    Rslt['Sag TauFast (ms)'] = popt1[3]
+    Rslt['Sag TauSlow (ms)'] = popt1[1]
+    Rslt['Sag TauMono (ms)'] = popt2[1]
+    Rslt['Rebound Depo (mV)'] = ReboundAmp[0]  # From baseline. Not 'correct' name. Rename if you want.
     Rslt['Rebound FWHM (ms)'] = ReboundDepo_half[0][0]/20000*1000
+    Rslt['Adaptation Ratio (flast/f2)'] = 1
+    Rslt['Fast Doublet Index (f1/f2)'] = 1
+    Rslt['Delay first Spike (ms)'] = DelayFirstSpike[0]
+
+
     # Pass to next row for next file ###################################################################################
     col = 0
     for thing in Rslt.keys():
@@ -506,3 +528,9 @@ workbook.close()
 end = time.time()
 print("Execution time: ", end - start, 'second(s) - ', (end - start) / len(src_files), 'second(s)/file')
 print("I-V Analysis Done. That's all folks!")
+
+"""
+ISIthreshold = list(map(lambda i: i >= 8, Frequency)).index(True)  # Take all sweeps ∋ nSpike > 8.
+for index, item in enumerate(PeaksSweep[ISIthreshold:]):
+    AdaptationRatio[index + ISIthreshold] = [(item[-1] - item[-2]) / (item[1] - item[0])]
+    """

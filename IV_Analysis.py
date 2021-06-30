@@ -243,31 +243,31 @@ for filename in src_files:
                 # plt.axis([1.6, 2.8, -70, 30])
                 # plt.show()
 
-                '''
-                mAHPpeaks[sweepNumber], _ = find_peaks(-abf.sweepY,height=30,distance = 300, prominence=(3,))
-                AHPpeaks[sweepNumber], _ = find_peaks(abf.sweepY, threshold=0.2, prominence=(0,0.25))
+                # mAHP #################################################################################################
+                mAHPpeaks[sweepNumber], _ = find_peaks(-abf.sweepY, height=30, distance=200, prominence=(1,))
+                AHPpeaks[sweepNumber], _ = find_peaks(abf.sweepY, threshold=0.2, prominence=(0, 0.25))
                 #print(PeaksSweep[sweepNumber][0])
                 #for marker in (PeaksSweep[sweepNumber]):
-                #    print(marker)
-                    #AHP[sweepNumber] = np.amin(abf.sweepY[marker : marker + int(0.005*abf.dataRate)])
+                #    AHP[sweepNumber] = np.amin(abf.sweepY[marker : marker + int(0.005*abf.dataRate)])
 
                 
-                plt.plot(abf.sweepX, abf.sweepY)
-                plt.plot(abf.sweepX[mAHPpeaks[sweepNumber]], abf.sweepY[mAHPpeaks[sweepNumber]],'xr')
-                plt.axis([1.60, 2.7, -65, -30])
-                plt.show()
+                # plt.plot(abf.sweepX, abf.sweepY)
+                # plt.plot(abf.sweepX[mAHPpeaks[sweepNumber]], abf.sweepY[mAHPpeaks[sweepNumber]],'xr')
+                # plt.axis([1.60, 2.7, -65, -30])
+                # plt.show()
 
                 # TEST TEST TEST TEST TEST TEST TEST
 
             
                 # ADP [sweepNumber] = np.amax(abf.sweepY[PeaksSweep[sweepNumber]+0.015]:
                 # abf.sweepY[PeaksSweep[sweepNumber]+0.020])
-                # mAHP [sweepNumber] = np.amin(abf.sweepY[PeaksSweep[sweepNumber]+0.020]:
+                #mAHP[sweepNumber] = np.amin(abf.sweepY[PeaksSweep[sweepNumber]+0.020])
                 # abf.sweepY[PeaksSweep[sweepNumber]+0.0])
                 plt.plot(abf.sweepX, abf.sweepY)
+                plt.plot(abf.sweepX[mAHPpeaks[sweepNumber]],abf.sweepY[mAHPpeaks[sweepNumber]], 'xg')
                 plt.axis([abf.sweepX[Cst['PulseStart'] - 1000], abf.sweepX[Cst['PulseEnd'] + 1000], -65, 0])
                 plt.show()
-                '''
+
             # TEST TEST TEST TEST TEST TEST TEST
 
 

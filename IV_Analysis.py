@@ -58,20 +58,26 @@ def monoexp(t, a, b, c):
 def biexp(t, a, b, c, d, e):
     return a * np.exp(- t / b) - c * np.exp(- t / d) - e
 
+########################################################################################################################
+# Check the constants ##################################################################################################
+########################################################################################################################
+
 version = 1
 if version == 0:
     Cst = {'PulseStart':1.50, 'PulseEnd': 2.50, 'ResistancePulseStart': 4.00,'RPulseInterval': 0.500,
        'ResistancePulseEnd': 4.50, 'SagFrame': 0.150,'AverageOffOnSet': 0.200}
 else:
-    Cst = {'PulseStart':1.65, 'PulseEnd': 2.65, 'ResistancePulseStart': 4.65,'RPulseInterval': 0.500,
+    Cst = {'PulseStart':1.65625, 'PulseEnd': 2.65, 'ResistancePulseStart': 4.65,'RPulseInterval': 0.500,
        'ResistancePulseEnd': 5.15, 'SagFrame': 0.165,'AverageOffOnSet': 0.200}
 
 Rslt = {'Filename': 0, 'Resistance Average (MOhm)': 0, 'Resistance Sag (MOhm)': 0, 'Resistance Steady-state (MOhm)': 0,
         'Baseline Average (mV)': 0, 'Baseline Average before Onset (mV)': 0,
         'Steady state depolarisation (mV)': 0, 'Sag Max Value (mV)': 0, 'Sag Amplitude (mV)': 0, 'Sag Ratio': 0,
         'Sag Peak (mV)': 0,'Sag FWHM (ms)': 0, 'Sag TauFast (ms)': 0, 'Sag TauSlow (ms)': 0,
-        'Sag TauMono (ms)': 0, 'Rebound Depo (mV)': 0, 'Rebound FWHM (ms)': 0, 'Adaptation Ratio (flast/f2)':0,
-        'Fast Doublet Index (f1/f2)': 0, 'Delay first Spike (ms)': 0}
+        'Sag TauMono (ms)': 0, 'Rebound Depo (mV)': 0, 'Rebound FWHM (ms)': 0, 'ReboundFWTM (ms)':0, 'Adaptation Ratio (flast/f2)':0,
+        'Fast Doublet Index (f1/f2)': 0, 'Delay first Spike (ms)': 0, 'AHP (mV)':0 , 'ADP (mV)':0 , 'mAHP (mV)':0,
+        'Spike Width (ms)':0, 'spike width third (ms)':0 }
+
 
 ''' Variables in dict.
 Var = {'Vsteady': 0,'VHcurrent':0, 'ResistanceSweep':0, 'ResistanceSweep':0, 'BaselineSweep':0,
@@ -120,14 +126,30 @@ for filename in src_files:
     Frequency = np.zeros(len(abf.sweepList))
     FDI = np.zeros(len(abf.sweepList))
     DelayFirstSpike = np.zeros(len(abf.sweepList))
+    AHP = np.zeros(len(abf.sweepList))
+    ADP = np.zeros(len(abf.sweepList))
+    mAHP = np.zeros(len(abf.sweepList))
+    DerivativeFirst = np.zeros(len(abf.sweepList), dtype=object)
+    DerivativeSecond = np.zeros(len(abf.sweepList), dtype=object)
+    DerivativeThird = np.zeros(len(abf.sweepList), dtype=object)
     AdaptationRatio = np.zeros(len(abf.sweepList), dtype=object)
     PeaksSweep = np.zeros(len(abf.sweepList), dtype=object)
     ReboundDepo = np.zeros(len(abf.sweepList), dtype=object)
     ReboundAmp = np.zeros(len(abf.sweepList), dtype=object)
     ReboundDepo_half = np.zeros(len(abf.sweepList), dtype=object)
+    ReboundDep_third = np.zeros(len(abf.sweepList), dtype=object)
+    APWidthHalf = np.zeros(len(abf.sweepList), dtype=object)
+    APWidthThird = np.zeros(len(abf.sweepList), dtype=object)
     InstantaneousFrequency = np.zeros(len(abf.sweepList), dtype=object)
+    AHPpeaks = np.zeros(len(abf.sweepList), dtype=object)
+    mAHPpeaks = np.zeros(len(abf.sweepList), dtype=object)
 
-
+    RiseRate = np.zeros(len(abf.sweepList), dtype=object)
+    DecayRate = np.zeros(len(abf.sweepList), dtype=object)
+    MaximumRiseRate = np.zeros(len(abf.sweepList), dtype=object)
+    MaximumDecayRate = np.zeros(len(abf.sweepList), dtype=object)
+    Threshold = np.zeros(len(abf.sweepList), dtype=object)
+    jerk_th= np.zeros(len(abf.sweepList), dtype=object)
     ####################################################################################################################
     # Algorithm core - Main iteration ##################################################################################
     ####################################################################################################################
@@ -146,15 +168,16 @@ for filename in src_files:
         # deltaV for Resistance
 
         # If the mean during the pulse frame is bellow the baseline +5 mV, we calculate the sag.
-        if np.mean(abf.sweepY[Cst['PulseStart']:Cst['PulseEnd']]) <= BaselineSweep[sweepNumber] :
+        if np.mean(abf.sweepY[Cst['PulseStart']:Cst['PulseEnd']]) <= BaselineSweep[sweepNumber]:
             VHcurrent[sweepNumber] = np.amin(
                 abf.sweepY[Cst['PulseStart']:Cst['PulseStart'] + Cst['SagFrame']])  # Take the minimum Voltage for each sweep.
             Vsteady[sweepNumber] = np.mean(abf.sweepY[
                                            Cst['PulseEnd'] - Cst['AverageOffOnSet']:Cst['PulseEnd']])
 
 
-            ReboundDepo[sweepNumber], _ = find_peaks(abf.sweepY,prominence=2,width = 500,distance=100000)
+            ReboundDepo[sweepNumber], _ = find_peaks(abf.sweepY,width = 500,distance=1000000)   # Prominence was 2
             ReboundDepo_half[sweepNumber] = peak_widths(abf.sweepY, ReboundDepo[sweepNumber], rel_height=0.5)
+            ReboundDep_third[sweepNumber] = peak_widths(abf.sweepY, ReboundDepo[sweepNumber], rel_height=0.75)
             ReboundAmp[sweepNumber] = abs(BaselineSweep[sweepNumber]) - abs(abf.sweepY[int(ReboundDepo[sweepNumber][0])])
 
             # Check you result on a plot ########################################
@@ -171,6 +194,82 @@ for filename in src_files:
         else:
             PeaksSweep[sweepNumber], _ = find_peaks(abf.sweepY, height=-5)
             Frequency[sweepNumber] = len(PeaksSweep[sweepNumber])
+            APWidthHalf[sweepNumber] = peak_widths(abf.sweepY, PeaksSweep[sweepNumber], rel_height=0.50)
+            APWidthThird[sweepNumber] = peak_widths(abf.sweepY, PeaksSweep[sweepNumber], rel_height=0.75)
+
+            if PeaksSweep[sweepNumber].size == 0:
+                pass
+            else:
+                # Derivative FIRST related measurements ###########################################################
+                DerivativeFirst[sweepNumber] = np.gradient(abf.sweepY,(1/abf.dataRate)*1e3)
+
+                # Potentially PLot dv/dt? #########################################################################
+                # plt.plot(abf.sweepX[int(PeaksSweep[sweepNumber][0]-0.005*abf.dataRate):int(PeaksSweep[sweepNumber][0]+0.005*abf.dataRate)],
+                #           abf.sweepY[int(PeaksSweep[sweepNumber][0]-0.005*abf.dataRate):int(PeaksSweep[sweepNumber][0]+0.005*abf.dataRate)])
+                # plt.show()
+                #
+                # plt.plot(abf.sweepY[int(PeaksSweep[sweepNumber][0]-0.005*abf.dataRate):int(PeaksSweep[sweepNumber][0]+0.005*abf.dataRate)],
+                #           DerivativeFirst[sweepNumber][int(PeaksSweep[sweepNumber][0]-0.005*abf.dataRate):int(PeaksSweep[sweepNumber][0]+0.005*abf.dataRate)])
+                # plt.show()
+
+
+                RiseRate[sweepNumber], _  = find_peaks(DerivativeFirst[sweepNumber], distance=50, height=10,prominence = (100,))
+                DecayRate[sweepNumber], _  = find_peaks(-DerivativeFirst[sweepNumber], distance=50, height=-30, prominence = (100,))
+
+                MaximumRiseRate[sweepNumber] = np.amax(DerivativeFirst[sweepNumber][RiseRate[sweepNumber]])
+                MaximumDecayRate[sweepNumber] = np.amax(DerivativeFirst[sweepNumber][DecayRate[sweepNumber]])
+
+                # plt.plot(abf.sweepX, abf.sweepY)
+                # plt.plot(abf.sweepX[RiseRate[sweepNumber]], abf.sweepY[RiseRate[sweepNumber]],'xr')
+                # plt.plot(abf.sweepX[DecayRate[sweepNumber]], abf.sweepY[DecayRate[sweepNumber]], 'xk')
+                # plt.axis([1.65, 2.6, -65, 30])
+                # plt.show()
+
+                # Derivative Second related measurements ###########################################################
+                DerivativeSecond[sweepNumber] = np.gradient(DerivativeFirst[sweepNumber],(1/abf.dataRate)*1e3)
+
+                # Derivative third related measurements ###########################################################
+                DerivativeThird[sweepNumber] = np.gradient(DerivativeSecond[sweepNumber],(1/abf.dataRate)*1e3)
+                jerk_th[sweepNumber] = DerivativeThird[sweepNumber][5:] \
+                                               - DerivativeThird[sweepNumber][:-5]
+
+
+                TempThresold, _ =  find_peaks(-jerk_th[sweepNumber],distance= 50, prominence=(10000,)) #Fix with abf.Datarate
+                Threshold[sweepNumber] = abf.sweepY[TempThresold]
+
+                # Check your results on a plot #######################################
+                # plt.plot(abf.sweepX,abf.sweepY)
+                # plt.plot(abf.sweepX[TempThresold], abf.sweepY[TempThresold],'xr')
+                # plt.axis([1.6, 2.8, -70, 30])
+                # plt.show()
+
+                '''
+                mAHPpeaks[sweepNumber], _ = find_peaks(-abf.sweepY,height=30,distance = 300, prominence=(3,))
+                AHPpeaks[sweepNumber], _ = find_peaks(abf.sweepY, threshold=0.2, prominence=(0,0.25))
+                #print(PeaksSweep[sweepNumber][0])
+                #for marker in (PeaksSweep[sweepNumber]):
+                #    print(marker)
+                    #AHP[sweepNumber] = np.amin(abf.sweepY[marker : marker + int(0.005*abf.dataRate)])
+
+                
+                plt.plot(abf.sweepX, abf.sweepY)
+                plt.plot(abf.sweepX[mAHPpeaks[sweepNumber]], abf.sweepY[mAHPpeaks[sweepNumber]],'xr')
+                plt.axis([1.60, 2.7, -65, -30])
+                plt.show()
+
+                # TEST TEST TEST TEST TEST TEST TEST
+
+            
+                # ADP [sweepNumber] = np.amax(abf.sweepY[PeaksSweep[sweepNumber]+0.015]:
+                # abf.sweepY[PeaksSweep[sweepNumber]+0.020])
+                # mAHP [sweepNumber] = np.amin(abf.sweepY[PeaksSweep[sweepNumber]+0.020]:
+                # abf.sweepY[PeaksSweep[sweepNumber]+0.0])
+                plt.plot(abf.sweepX, abf.sweepY)
+                plt.axis([abf.sweepX[Cst['PulseStart'] - 1000], abf.sweepX[Cst['PulseEnd'] + 1000], -65, 0])
+                plt.show()
+                '''
+            # TEST TEST TEST TEST TEST TEST TEST
+
 
     print(" Processing data...", end="")
 
@@ -188,32 +287,25 @@ for filename in src_files:
     SagPeak = BaselineSweep[0] - VHcurrent[0]  # From baseline.
     SagRatio = (VHcurrent[0] - Vsteady[0]) / (VHcurrent[0] - VBaseline[0])
 
-
     ISIthreshold = list(map(lambda i: i >= 8, Frequency)).index(True)  # Take all sweeps ∋ nSpike > 8.
     for index, item in enumerate(PeaksSweep[ISIthreshold:]):
+        InstantaneousFrequency[index + ISIthreshold] = [1 / (item[j + 1] - item[j]) * abf.dataRate for j in
+                                                      np.arange(0, len(item) - 1)]
         AdaptationRatio[index + ISIthreshold] = (item[-1] - item[-2]) / (item[2] - item[1])
         DelayFirstSpike[index + ISIthreshold] = (item[0] - Cst['PulseStart'])/abf.dataRate * 1e3
+        FDI[index + ISIthreshold] =  InstantaneousFrequency[index + ISIthreshold][0] \
+                                     / InstantaneousFrequency[index + ISIthreshold][1]
 
 
-    plt.plot(np.linspace(-300, 300, len(AdaptationRatio)), DelayFirstSpike)
-    plt.show()
-
-    # One loop is not necessary there ?????!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! Get the adaptation ratio later
-    fthreshold = list(map(lambda i: i > 5, Frequency)).index(True)  # Take all sweeps ∋ nSpike > 5.
-    for index, item in enumerate(PeaksSweep[fthreshold:]):
-        InstantaneousFrequency[index + fthreshold] = [1 / (item[j + 1] - item[j]) * abf.dataRate for j in
-                                                      np.arange(0, len(item) - 1)]
-
-
-    '''
+        '''
         # Fitting Instantaneous frequency process
-        p0 = [-100, 1, 100, 10, 10]  # The function need some help on the parameters. input your first guess here.
-        popt, pcov = optimize.curve_fit(biexp, np.arange(0, len(PeaksSweep[index + fthreshold]) - 1),
-                                        InstantaneousFrequency[index + fthreshold], p0, maxfev=5000)
+        p0 = [100, 1,-50, 10,-50]  # The function need some help on the parameters. input your first guess here.
+        popt, pcov = optimize.curve_fit(biexp, np.arange(0, len(PeaksSweep[index + ISIthreshold]) - 1),
+                                        InstantaneousFrequency[index + ISIthreshold], p0, maxfev=5000)
         # print("a =", popt[0], "+/-", pcov[0, 0] ** 0.5)
         # print("b =", popt[1], "+/-", pcov[1, 1] ** 0.5)
         # print("c =", popt[2], "+/-", pcov[2, 2] ** 0.5)
-        yEXP = biexp(np.arange(0, len(PeaksSweep[index + fthreshold]) - 1), *popt)
+        yEXP = biexp(np.arange(0, len(PeaksSweep[index + ISIthreshold]) - 1), *popt)
 
         # Plotting processed data ######################################################################################
 
@@ -225,19 +317,19 @@ for filename in src_files:
         ax.spines['top'].set_color('none')
         ax.spines['bottom'].set_color('none')
         plt.gca().get_xaxis().set_visible(False)  # hide X axis
-        plt.scatter(range(0, len(PeaksSweep[index + fthreshold]) - 1), InstantaneousFrequency[index + fthreshold],
+        plt.scatter(range(0, len(PeaksSweep[index + ISIthreshold]) - 1), InstantaneousFrequency[index + ISIthreshold],
                     label='Data', facecolors='None', edgecolors='k')
-        plt.plot(range(0, len(PeaksSweep[index + fthreshold]) - 1), yEXP, 'r-', ls='--',
+        plt.plot(range(0, len(PeaksSweep[index + ISIthreshold]) - 1), yEXP, 'r-', ls='--',
                  label='a=%5.1f, b=%5.1f, c=%5.1f, d=%5.1f, e=%5.1f' % tuple(popt))
         plt.text(0.3, 0.75, r'$F_{instantaneous}(t)=a{e}^{-b{t}}+c{e}^{-d{t}}-e$', fontsize=15,
                  transform=plt.gca().transAxes)  # Disable/Delete if you don't use Tex.
-        plt.title("Instantaneous frequency - " + str(filename) + "; \n $n_{sweep} =$ " + str(index + fthreshold))
+        plt.title("Instantaneous frequency - " + str(filename) + "; \n $n_{sweep} =$ " + str(index + ISIthreshold))
         plt.ylabel('Instantaneous frequency (Hz)', fontweight='bold')
         plt.legend()
         fig.savefig(directory + '/Results_IV/' + timestr + '/' + filename[:-4] + '/'
-                    + 'Instantaneous_frequency_sweep_' + str(index + fthreshold) + '.png', dpi=400)
+                    + 'Instantaneous_frequency_sweep_' + str(index + ISIthreshold) + '.png', dpi=400)
         plt.show()
-    '''
+        '''
 
     ####################################################################################################################
     # Plotting processed data ##########################################################################################
@@ -435,14 +527,27 @@ for filename in src_files:
     plt.gca().get_xaxis().set_visible(False)  # hide X axis
 
     # Plot blue trace on top
-    abf.setSweep(abf.sweepList[-9])  # Take the last sweep BUT CHANGE THIS!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    abf.setSweep(abf.sweepList[ISIthreshold])  # Take the first sweep where n spikes>= 8
     limitmax = np.amax(abf.sweepY)   # This trace define the max
     ax0.plot(abf.sweepX, abf.sweepY, 'blue', linewidth=1)
+
+    # Add Instant frequency markers
+
+    ax0.annotate(s='', xy=(abf.sweepX[int(PeaksSweep[ISIthreshold][0])], abf.sweepY[int(PeaksSweep[ISIthreshold][0])]),
+                 xytext=(abf.sweepX[int(PeaksSweep[ISIthreshold][1])], abf.sweepY[int(PeaksSweep[ISIthreshold][0])]),
+                 arrowprops=dict(arrowstyle='<->', lw=0.5), zorder=11,ha='center')
+    ax0.annotate(s='', xy=(abf.sweepX[int(PeaksSweep[ISIthreshold][1])], abf.sweepY[int(PeaksSweep[ISIthreshold][0])]),
+                 xytext=(abf.sweepX[int(PeaksSweep[ISIthreshold][2])], abf.sweepY[int(PeaksSweep[ISIthreshold][0])]),
+                 arrowprops=dict(arrowstyle='<->', lw=0.5), zorder=11,ha='center')
+    ax0.annotate(s='', xy=(abf.sweepX[int(PeaksSweep[ISIthreshold][-1])], abf.sweepY[int(PeaksSweep[ISIthreshold][0])]),
+                 xytext=(abf.sweepX[int(PeaksSweep[ISIthreshold][-2])], abf.sweepY[int(PeaksSweep[ISIthreshold][0])]),
+                 arrowprops=dict(arrowstyle='<->', lw=0.5), zorder=11,ha='center')
+
 
     #Plot grey trace on top
     abf.setSweep(abf.sweepList[0])   # Take the first sweep
     limitmin = np.amin(abf.sweepY) # This trace define the min
-    ax0.plot(abf.sweepX, abf.sweepY, 'gray', linewidth=1)
+    ax0.plot(abf.sweepX, abf.sweepY, 'grey', linewidth=1)
 
     #Add legend (voltage)
     ax0.plot([2.70, 2.80], [limitmax-abs(limitmax*1.2), limitmax-abs(limitmax*1.2)], 'k', linewidth=2, zorder=10)
@@ -451,6 +556,8 @@ for filename in src_files:
                  fontsize=7, fontweight='bold',zorder=4)
     ax0.annotate('100 ms', xy=(2.72, limitmax-abs(limitmax*1.1)), xytext=(2.72, limitmax-abs(limitmax*1.1)),
                  fontsize=7, fontweight='bold',zorder=4)
+
+
 
     # Restrain the view to the pulse step
     plt.axis([1.5, 2.85, limitmin, limitmax])  # plt.axis([xmin,xmax,ymin,ymax])
@@ -464,7 +571,7 @@ for filename in src_files:
     plt.gca().get_xaxis().set_visible(False)  # hide X axis
 
     # Plot current inputs
-    ax1.plot(abf.sweepX, abf.data[1][len(abf.sweepX) * 15:len(abf.sweepX) * 16], 'b', linewidth=2)
+    ax1.plot(abf.sweepX, abf.data[1][len(abf.sweepX) * (ISIthreshold):len(abf.sweepX) * (ISIthreshold+1)], 'b', linewidth=2)
     ax1.plot(abf.sweepX, abf.sweepC, 'k')
 
     # Add legend (current)
@@ -507,10 +614,15 @@ for filename in src_files:
     Rslt['Sag TauMono (ms)'] = popt2[1]
     Rslt['Rebound Depo (mV)'] = ReboundAmp[0]  # From baseline. Not 'correct' name. Rename if you want.
     Rslt['Rebound FWHM (ms)'] = ReboundDepo_half[0][0]/20000*1000
-    Rslt['Adaptation Ratio (flast/f2)'] = 1
-    Rslt['Fast Doublet Index (f1/f2)'] = 1
-    Rslt['Delay first Spike (ms)'] = DelayFirstSpike[0]
-
+    Rslt['ReboundFWTM (ms)'] = ReboundDep_third[0][0]/20000*1000
+    Rslt['Adaptation Ratio (flast/f2)'] = AdaptationRatio[ISIthreshold]
+    Rslt['Fast Doublet Index (f1/f2)'] = FDI[ISIthreshold]
+    Rslt['Delay first Spike (ms)'] = DelayFirstSpike[ISIthreshold]
+    Rslt['Spike Width (ms)'] = APWidthHalf[ISIthreshold][0][0]/20000*1000
+    Rslt['spike width third (ms)'] = APWidthThird[ISIthreshold][0][0]/20000*1000
+    Rslt['AHP (mV)'] = 3
+    Rslt['ADP (mV)'] = 4
+    Rslt['mAHP (mV)'] = 5
 
     # Pass to next row for next file ###################################################################################
     col = 0
@@ -528,9 +640,3 @@ workbook.close()
 end = time.time()
 print("Execution time: ", end - start, 'second(s) - ', (end - start) / len(src_files), 'second(s)/file')
 print("I-V Analysis Done. That's all folks!")
-
-"""
-ISIthreshold = list(map(lambda i: i >= 8, Frequency)).index(True)  # Take all sweeps ∋ nSpike > 8.
-for index, item in enumerate(PeaksSweep[ISIthreshold:]):
-    AdaptationRatio[index + ISIthreshold] = [(item[-1] - item[-2]) / (item[1] - item[0])]
-    """

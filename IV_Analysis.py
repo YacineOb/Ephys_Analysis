@@ -71,7 +71,7 @@ else:
        'ResistancePulseEnd': 5.15, 'SagFrame': 0.165,'AverageOffOnSet': 0.200}
 
 Rslt = {'Filename': 0, 'Resistance Average (MOhm)': 0, 'Resistance Sag (MOhm)': 0, 'Resistance Steady-state (MOhm)': 0,
-        'Baseline Average (mV)': 0, 'Baseline Average before Onset (mV)': 0,
+        'Baseline Average (mV)': 0, 'Baseline Average before Onset (mV)': 0,'Membrane time constant (ms)':0,
         'Steady state depolarisation (mV)': 0, 'Sag Max Value (mV)': 0, 'Sag Amplitude (mV)': 0, 'Sag Ratio': 0,
         'Sag Peak (mV)': 0,'Sag FWHM (ms)': 0, 'Sag TauFast (ms)': 0, 'Sag TauSlow (ms)': 0,
         'Sag TauMono (ms)': 0, 'Rebound Depo (mV)': 0, 'Rebound FWHM (ms)': 0, 'ReboundFWTM (ms)':0, 'Adaptation Ratio (flast/f2)':0,
@@ -111,13 +111,15 @@ for filename in src_files:
     ####################################################################################################################
 
     # Convert constants to sample points
-    Cst = {key: int(Cst[key] * abf.dataRate) for key in Cst.keys()}
-
-    # ! I create the current input data. Use SweepC for ABF2.0. No SweepC with WinWCP converted ABF
-    CurrentIn = np.linspace(-300, 300, len(abf.sweepList))
-
+    loop = 0
+    if loop <= 1:
+        Cst = {key: int(Cst[key] * abf.dataRate) for key in Cst.keys()}
+        loop += 1
+    else:
+        pass
 
     # Define variables
+    CurrentIn = np.zeros(len(abf.sweepList))
     Vsteady = np.zeros(len(abf.sweepList))
     VHcurrent = ResistanceSweep = np.zeros(len(abf.sweepList))
     ResistanceSweep = np.zeros(len(abf.sweepList))
@@ -129,6 +131,8 @@ for filename in src_files:
     AHP = np.zeros(len(abf.sweepList))
     ADP = np.zeros(len(abf.sweepList))
     mAHP = np.zeros(len(abf.sweepList))
+    TCst = np.zeros(len(abf.sweepList))
+
     DerivativeFirst = np.zeros(len(abf.sweepList), dtype=object)
     DerivativeSecond = np.zeros(len(abf.sweepList), dtype=object)
     DerivativeThird = np.zeros(len(abf.sweepList), dtype=object)
@@ -157,6 +161,9 @@ for filename in src_files:
     for sweepNumber in abf.sweepList:
         abf.setSweep(sweepNumber)
 
+        # Measure the current injected at each sweep
+        CurrentIn[sweepNumber] = np.mean(abf.sweepC[Cst['PulseStart']:Cst['PulseEnd']])
+
         # Baseline from 0 second to the beginning of the pulse.
         BaselineSweep[sweepNumber] = np.mean(abf.sweepY[:Cst['PulseStart']])  # Mean/baseline before current pulse
         VBaseline[sweepNumber] = np.mean(abf.sweepY[Cst['PulseStart'] - Cst['AverageOffOnSet']:Cst['PulseStart']])
@@ -184,6 +191,23 @@ for filename in src_files:
             #plt.plot(abf.sweepX, abf.sweepY)
             #plt.plot(abf.sweepX[ReboundDepo[sweepNumber][0]],abf.sweepY[ReboundDepo[sweepNumber][0]],'xr')
             #plt.show()
+
+            # Membrane time constant ##################################################################################
+            IndexSag = np.amin(np.where(abf.sweepY == VHcurrent[sweepNumber]))
+            x1 = abf.sweepX[int(1.6565 * abf.dataRate):int(IndexSag)]
+            y1 = abf.sweepY[int(1.6565 * abf.dataRate):int(IndexSag)]
+
+            x00 = abf.sweepX[int(1.6565 * abf.dataRate):int(IndexSag + 1 * abf.dataRate)]
+
+            p3 = [1, 1, 1]
+            popt3, pcov3 = optimize.curve_fit(monoexp, x1, y1, p3, maxfev=100000)  # Big number of iteration.
+            yEXP3 = monoexp(x1, *popt3)
+            plt.plot(x1, y1)
+            plt.plot(x1, yEXP3, 'r-', ls='--', label='a=%5.3f, Tau_0=%5.3f, c=%5.3f' % tuple(popt3))
+            plt.axis([1.6565, 2, -90, -65])
+            plt.plot(x00, monoexp(x00, popt3[0], popt3[1], popt3[2]), 'g--')
+            TCst[sweepNumber] = popt3[1] * 1e3
+
 
 
         # If the mean during the pulse frame is equal to the baseline, there is probably no sag and no spikes.
@@ -263,13 +287,19 @@ for filename in src_files:
                 # abf.sweepY[PeaksSweep[sweepNumber]+0.020])
                 #mAHP[sweepNumber] = np.amin(abf.sweepY[PeaksSweep[sweepNumber]+0.020])
                 # abf.sweepY[PeaksSweep[sweepNumber]+0.0])
+                '''
                 plt.plot(abf.sweepX, abf.sweepY)
                 plt.plot(abf.sweepX[mAHPpeaks[sweepNumber]],abf.sweepY[mAHPpeaks[sweepNumber]], 'xg')
                 plt.axis([abf.sweepX[Cst['PulseStart'] - 1000], abf.sweepX[Cst['PulseEnd'] + 1000], -65, 0])
                 plt.show()
+                '''
 
-            # TEST TEST TEST TEST TEST TEST TEST
+            plt.show()
+                # TEST TEST TEST TEST TEST TEST TEST
 
+    TimeCst = np.trim_zeros(TCst)
+    plt.plot(np.arange(0, len(TimeCst)), TimeCst, 'ok')
+    plt.show()
 
     print(" Processing data...", end="")
 
@@ -393,7 +423,7 @@ for filename in src_files:
     plt.xlabel('Current Injected (pA)', fontweight='bold')
     plt.ylabel('Average Firing Frequency (Hz)', fontweight='bold')
     fig.savefig(directory + '/Results_IV/' + timestr + '/' + filename[:-4] + '/' + 'Frequency.png', dpi=400)
-    # plt.show()
+    plt.show()
 
     # FWHM######################################################################################
     #PUT THIS ABOVE?
@@ -425,12 +455,13 @@ for filename in src_files:
     SteadyResistance = (VBaseline[0] - Vsteady[0]) / \
                        -(np.mean(abf.sweepC[Cst['PulseEnd'] - Cst['AverageOffOnSet']:Cst['PulseEnd']]) * 1e-3)
 
+
     # Plot sag with ratio########################
 
     fig = plt.figure()
     ax = fig.add_subplot(111)
     plt.plot(abf.sweepX, abf.sweepY, 'k', linewidth=1)
-    plt.axis([1.25, 3, np.amin(abf.sweepY) - 2, BaselineSweep[0] + 10])  # plt.axis([xmin,xmax,ymin,ymax])
+    plt.axis([1.25, 3, np.amin(abf.sweepY) - 2, abf.sweepY[ReboundDepo[0]] + 1])  # plt.axis([xmin,xmax,ymin,ymax])
     for axis in ['bottom', 'left']:
         ax.spines[axis].set_linewidth(2)
     plt.gca().spines['right'].set_visible(False)
@@ -449,12 +480,17 @@ for filename in src_files:
     plt.annotate(str(round(np.mean(BaselineSweep), 2)) + ' mV', xy=(1.25, BaselineSweep[0]),
                  xytext=(1.50, BaselineSweep[0] + 1.25), ha='center')  # Baseline
 
+    plt.annotate('', xy=(2.65, BaselineSweep[0]), xytext=(2.65, abf.sweepY[ReboundDepo[0]]),
+                 arrowprops=dict(arrowstyle='<->'))
+
     plt.axhline(y=VHcurrent[0], linewidth=0.7, color='r', linestyle='--')
     plt.axhline(y=Vsteady[0], linewidth=0.7, color='b', linestyle='--')
     plt.axhline(y=BaselineSweep[0], linewidth=0.7, color='k', linestyle='--')
+    plt.axhline(y=abf.sweepY[ReboundDepo[0]], linewidth=0.7, color='g', linestyle='--')
 
-    plt.hlines(results_half[1] * -1, (1.65 * 20000 + results_half[2]) / 20000, (1.65 * 20000 + results_half[3]) / 20000,
+    plt.hlines(results_half[1] * -1, (Cst['PulseStart'] + results_half[2]) / 20000, (Cst['PulseStart'] + results_half[3]) / 20000,
                color='red')
+
 
     plt.title("Sag properties")
     plt.xlabel('Time (s)', fontweight='bold')
@@ -598,11 +634,12 @@ for filename in src_files:
     ####################################################################################################################
 
     Rslt['Filename'] = filename
+    Rslt['Baseline Average (mV)'] = np.mean(BaselineAverage)
+    Rslt['Baseline Average before Onset (mV)'] = VBaseline[0]
     Rslt['Resistance Average (MOhm)'] = ResistanceAverage
     Rslt['Resistance Sag (MOhm)'] = SagResistance
     Rslt['Resistance Steady-state (MOhm)'] = SteadyResistance
-    Rslt['Baseline Average (mV)'] = np.mean(BaselineAverage)
-    Rslt['Baseline Average before Onset (mV)'] = VBaseline[0]
+    Rslt['Membrane time constant (ms)'] = np.mean(TimeCst)
     Rslt['Steady state depolarisation (mV)'] = Vsteady[0]
     Rslt['Sag Max Value (mV)'] = VHcurrent[0]
     Rslt['Sag Amplitude (mV)'] = abs(VHcurrent[0] - Vsteady[0])
